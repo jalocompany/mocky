@@ -14,7 +14,7 @@ services:
       - mongo
     build:
       context: .
-      dockerfile: docker_images/deploy/Dockerfile.deploy
+      dockerfile: docker_images/deploy/Dockerfile.app
     container_name: mocky
     env_file:
       - .envs/.env.docker

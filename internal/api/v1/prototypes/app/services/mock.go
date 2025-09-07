@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"mocky/internal/context/controllers/placeholder"
+	"mocky/internal/core/settings"
 	"net/http"
 	"regexp"
 	"strings"
@@ -21,7 +22,7 @@ func (s *PrototypesService) Mock(cc *customctx.CustomContext, request *http.Requ
 
 	entry.Info("Mocking request")
 
-	realPath := strings.TrimPrefix(request.URL.Path, "/v1/mocky")
+	realPath := strings.TrimPrefix(request.URL.Path, "/"+settings.Settings.ROOT_PATH+"/v1/mocky")
 
 	prototypeModel := s.prototypesRepository.GetByPath(cc, realPath, request.Method)
 

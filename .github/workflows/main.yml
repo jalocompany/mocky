@@ -1,0 +1,78 @@
+name: FastAPI CI/CD
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+
+permissions:
+  contents: write
+
+# Re‐usar versiones y directorios en todos los jobs
+env:
+  PYTHON_VERSION: "3.12"
+  COVERAGE_REPORTS: coverage-reports
+
+jobs:
+
+###############################################################################
+# 3.  BUILD 
+###############################################################################
+
+  build-and-push-docker-hub:
+    name: Push to Docker Hub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Build and Push
+        uses: ronihdzz/push-to-dockerhub-action@v2
+        with:
+          dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+          dockerhub-password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          dockerhub-repository: ${{ vars.DOCKERHUB_REPOSITORY }}
+          dockerfile-path: "docker_images/app/Dockerfile.app"
+          branch-environment-map: '{"main": "prod", "development": "dev", "staging": "stg", "testing": "tst"}'
+
+
+###############################################################################
+# 4.  DEPLOY – Dokploy webhook
+###############################################################################
+  deploy-dokploy:
+    name: 🚀 Redeploy on Dokploy
+    runs-on: ubuntu-latest
+    needs: build-and-push-docker-hub
+
+    steps:
+      - name: 🔗 Trigger Dokploy webhook
+        id: dokploy
+        env:
+          WEBHOOK_URL: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK_URL }}
+        run: |
+          echo "🌐  Calling Dokploy redeploy webhook…"
+          set -euo pipefail
+
+          # ▸ Hacemos la petición y separamos cuerpo + status
+          RAW_RESPONSE=$(curl -sSL -w "\n%{http_code}" -X POST "${WEBHOOK_URL}")
+          BODY=$(echo "${RAW_RESPONSE}" | head -n -1)
+          HTTP_CODE=$(echo "${RAW_RESPONSE}" | tail -n 1)
+
+          echo "🔢 HTTP status: ${HTTP_CODE}"
+          echo "📨 Response body:"
+          echo "${BODY}"
+
+          # Guardar en outputs (compacto, sin saltos de línea)
+          BODY_ESCAPED=$(echo "${BODY}" | tr -d '\n' | tr -d '\r')
+          echo "response=${BODY_ESCAPED}" >> "$GITHUB_OUTPUT"
+
+          # Fallar si el código HTTP indica error
+          if [ "${HTTP_CODE}" -ge 400 ]; then
+            echo "::error::Deploy failed – API returned ${HTTP_CODE}"
+            exit 1
+          fi
+
+      - name: ✅ Deploy summary
+        run: |
+          echo "### Dokploy answered:" >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ steps.dokploy.outputs.response }}' >> "$GITHUB_STEP_SUMMARY"
